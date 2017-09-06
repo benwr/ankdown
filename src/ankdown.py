@@ -55,8 +55,8 @@ def convert_to_card(fields, outfile, separator="\t"):
     outfile.write("\n")
 
 def html_from_math_and_markdown(fieldtext):
-    ENV_SENTINEL = '\0'
-    INLINE_SENTINEL = '\1'
+    ENV_SENTINEL = '\1'
+    INLINE_SENTINEL = '\2'
 
     text_outside_envs = []
     text_inside_envs = []
@@ -80,10 +80,12 @@ def html_from_math_and_markdown(fieldtext):
 
     sentinel_text = INLINE_SENTINEL.join(text_outside_inlines)
 
+    html_with_sentinels = misaka.html(sentinel_text, extensions=("fenced-code",))
+
     reconstructable_text = []
     env_counter = 0
     inline_counter = 0
-    for c in sentinel_text:
+    for c in html_with_sentinels:
         if c == ENV_SENTINEL:
             reconstructable_text.append("[$$]")
             reconstructable_text.append(text_inside_envs[env_counter])
@@ -97,9 +99,7 @@ def html_from_math_and_markdown(fieldtext):
         else:
             reconstructable_text.append(c)
 
-    final_text = ''.join(reconstructable_text)
-
-    return misaka.html(final_text, extensions=("fenced-code",))
+    return ''.join(reconstructable_text)
 
 
 def compile_field(field_lines, field_n=0):
