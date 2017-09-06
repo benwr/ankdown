@@ -54,13 +54,10 @@ def convert_to_card(fields, outfile, separator="\t"):
     outfile.write(separator.join(fields))
     outfile.write("\n")
 
-
-def compile_field(field_lines):
-    """Turn field lines into an HTML field suitable for Anki."""
+def html_from_math_and_markdown(fieldtext):
     ENV_SENTINEL = '\0'
     INLINE_SENTINEL = '\1'
 
-    fieldtext = '\n'.join(field_lines)
     text_outside_envs = []
     text_inside_envs = []
     last_env_end = 0
@@ -102,7 +99,16 @@ def compile_field(field_lines):
 
     final_text = ''.join(reconstructable_text)
 
-    result = misaka.html(final_text)
+    return misaka.html(final_text, extensions=("fenced-code",))
+
+
+def compile_field(field_lines, field_n=0):
+    """Turn field lines into an HTML field suitable for Anki."""
+    fieldtext = '\n'.join(field_lines)
+    if field_n < 2:
+        result = html_from_math_and_markdown(fieldtext)
+    else:
+        result = fieldtext
     return result.replace("\n", " ")
 
 
@@ -113,18 +119,18 @@ def produce_result(infile, outfile):
     for line in infile:
         stripped = line.strip()
         if stripped == "%%":
-            current_fields.append(compile_field(current_field_lines))
+            current_fields.append(compile_field(current_field_lines, field_n=len(current_fields)))
             convert_to_card(current_fields, outfile)
             current_fields = []
             current_field_lines = []
         elif stripped == "%":
-            current_fields.append(compile_field(current_field_lines))
+            current_fields.append(compile_field(current_field_lines, field_n=len(current_fields)))
             current_field_lines = []
         else:
             current_field_lines.append(line)
 
     if current_field_lines:
-        current_fields.append(compile_field(current_field_lines))
+        current_fields.append(compile_field(current_field_lines, field_n=len(current_fields)))
     if current_fields:
         convert_to_card(current_fields, outfile)
 
