@@ -3,8 +3,6 @@ from os import path
 from codecs import open
 from setuptools import setup, find_packages
 
-import ankdown.ankdown as ankdown
-
 here = path.abspath(path.dirname(__file__))
 
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
@@ -12,7 +10,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="ankdown",
-    version=ankdown.VERSION,
+    version="0.1.2",
     description="A utility for converting Markdown into Anki cards",
     long_description=long_description,
     url="https://github.com/benwr/ankdown",
