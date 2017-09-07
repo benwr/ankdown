@@ -14,6 +14,9 @@ your decks.
 
 ## How to use it
 
+**NOTE** This program requires _Python 3_, along with the
+packages in requirements.txt
+
 Write a card in the following format:
 
 ```markdown
@@ -42,13 +45,14 @@ but most markdown editors will work better if you separate them from
 other text with empty lines, so that they're treated as their own
 paragraphs.
 
-To compile the cards, put them in a file (e.g. `notes.md`), and run them through
-`python ankdown.py < notes.md > outfile.txt`.
+To compile the cards, put them in a file (e.g. `notes.md`), and run
+them through `python ankdown.py -p notes.apkg -d Notes -i notes.md`.
 
 To add them to Anki, go to File > Import, and select the file you created
-(e.g. `outfile.txt`).
+(e.g. `notes.apkg`).
 
-**IMPORTANT**: Make sure that the separator is set to `\t`, you've
-selected the deck you want to modify, and that "Allow HTML" is checked.
+**IMPORTANT**: When using the text format rather than the .apkg,
+make sure that the separator is set to `\t`, you've selected the deck
+you want to modify, and that "Allow HTML" is checked.
 
 Press "Import", and you should be good to go.
