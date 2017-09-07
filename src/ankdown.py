@@ -8,7 +8,7 @@ the (somewhat annoying, imo) card editor in the anki desktop app.
 The markdown inputs should look like this:
 
 ```
-First Card Front ![https://example.com/link_to_image.png]
+First Card Front ![alt_text](local_image.png)
 
 %
 
@@ -30,31 +30,52 @@ Second Card Back (note that tags are optional)
 ```
 
 Usage:
-    ankdown.py [-i INFILE] [-o OUTFILE]
+    ankdown.py [-i INFILE] [-o OUTFILE | -p PACKAGENAME [-d DECKNAME]]
 
 Options:
     -h --help   Show this help message
     --version   Show version
 
     -o OUTFILE  Put the results in OUTFILE, rather than stdout
-    -i INFILE   Read the input from INFILE, rather than stdin
+    -i INFILE   Read the input from INFILE, rather than stdin. The -p method is preferred.
+    -p PACKAGE  Instead of a .txt file, produce a .apkg file. This method is recommended.
+    -d DECKNAME When producing a .apkg, this is the name of the deck to use.
 """
 
+import hashlib
+import random
 import re
 import sys
 
 import misaka
+import genanki
 
 from docopt import docopt
 
-VERSION = "0.0.1"
+VERSION = "0.1.0"
 
-def convert_to_card(fields, outfile, separator="\t"):
-    """Take a list of compiled fields, and append them as a card to outfile."""
-    outfile.write(separator.join(fields))
-    outfile.write("\n")
+
+def convert_to_card_text(fields, separator="\t"):
+    """Take a list of compiled fields, and turn them into separated text."""
+    result = separator.join(fields) + "\n"
+    return result
 
 def html_from_math_and_markdown(fieldtext):
+    """Turn a math and markdown piece of text into an HTML and Anki-math piece of text."""
+    
+    # NOTE(ben): This is the hackiest of the hacky.
+
+    # Basically, we find all the things that look like they're delimited by `$$` signs,
+    # store them, and replace them with a non-printable character that seems very
+    # unlikely to show up in anybody's code.
+    # Then we do the same for things that look like they're delimited by `$` signs, with
+    # a different nonprintable character.
+    # We run the result through the markdown compiler, hoping (well, I checked) that the
+    # nonprintable characters don't get modified or removed, and then we walk the html
+    # string and replace all the instances of the nonprintable characters with their
+    # corresponding (slightly modified) text.
+
+    # This could be slightly DRYer but it's not that bad.
     ENV_SENTINEL = '\1'
     INLINE_SENTINEL = '\2'
 
@@ -112,15 +133,15 @@ def compile_field(field_lines, field_n=0):
     return result.replace("\n", " ")
 
 
-def produce_result(infile, outfile):
-    """Given the markdown and math in infile, produce the intended result in outfile."""
+def produce_cards(infile):
+    """Given the markdown and math in infile, produce the intended result cards."""
     current_field_lines = []
     current_fields = []
     for line in infile:
         stripped = line.strip()
         if stripped == "%%":
             current_fields.append(compile_field(current_field_lines, field_n=len(current_fields)))
-            convert_to_card(current_fields, outfile)
+            yield current_fields
             current_fields = []
             current_field_lines = []
         elif stripped == "%":
@@ -132,27 +153,93 @@ def produce_result(infile, outfile):
     if current_field_lines:
         current_fields.append(compile_field(current_field_lines, field_n=len(current_fields)))
     if current_fields:
-        convert_to_card(current_fields, outfile)
+        yield current_fields
 
+def cards_to_textfile(cards, outfile):
+    """Take an iterable of cards, and turn them into a text file that Anki can read."""
+    for card in cards:
+        outfile.write(convert_to_card_text(card))
+
+def media_references(card):
+    """Find all media references in a card"""
+    for field in card:
+        # Find HTML images, at least. Maybe some other things.
+        for match in re.finditer(r'src="([^"]*)"', field):
+            yield match.group(1)
+        for match in re.finditer(r'\[sound:(.*)\]', field):
+            yield match.group(1)
+
+def simple_hash(text):
+    # Ugh; why can't this just be hash(thing)
+    h = hashlib.md5()
+    h.update(text.encode("utf-8"))
+    return int(h.hexdigest(), 16) % (1 << 31)
+
+def cards_to_apkg(cards, output_name, deckname=None):
+    model_name = "Ankdown Model"
+    model_id = simple_hash(model_name)
+    model = genanki.Model(
+        model_id,
+        model_name,
+        fields=[
+            {"name": "Question"},
+            {"name": "Answer"},
+            {"name": "Tags"},
+        ],
+        templates=[
+            {
+                "name": "Ankdown Card",
+                "qfmt": "{{Question}}",
+                "afmt": "{{FrontSide}}<hr id='answer'>{{Answer}}",
+            },
+        ]
+    )
+    deck_id = random.randrange(1 << 30, 1 << 31)
+    deck = genanki.Deck(deck_id, deckname)
+
+    media = set()
+    for i, card in enumerate(cards):
+        if len(card) > 3:
+            card = card[:2]
+        else:
+            while len(card) < 3:
+                card.append('')
+
+        for media_reference in media_references(card):
+            media.add(media_reference)
+        if deckname is not None:
+            note_id = (simple_hash(deckname) + i)
+        else:
+            note_id = random.randrange(1 << 30, 1 << 31)
+        note = genanki.Note(model=model, fields=card, guid=note_id)
+        deck.add_note(note)
+
+    package = genanki.Package(deck)
+    package.media_files = list(media)
+    package.write_to_file(output_name)
 
 def main(arguments):
     """Run the thing."""
 
     in_arg = arguments['-i']
     out_arg = arguments['-o']
+    pkg_arg = arguments['-p']
+    deck_arg = arguments['-d']
 
-    if in_arg and out_arg:
-        with open(in_arg, 'r') as infile:
-            with open(out_arg, 'w') as outfile:
-                return produce_result(infile, outfile)
-    elif in_arg:
-        with open(in_arg, 'r') as infile:
-            return produce_result(infile, sys.stdout)
+    if in_arg:
+        infile = open(in_arg, 'r')
+    else:
+        infile = sys.stdin
+
+    if pkg_arg:
+        cards_to_apkg(produce_cards(infile), pkg_arg, deck_arg)
     elif out_arg:
         with open(out_arg, 'w') as outfile:
-            return produce_result(sys.stdin, outfile)
+            return cards_to_textfile(produce_cards(infile), outfile)
     else:
-        return produce_result(sys.stdin, sys.stdout)
+        return cards_to_textfile(produce_cards(infile), sys.stdout)
+
+    infile.close()
 
 
 if __name__ == "__main__":
