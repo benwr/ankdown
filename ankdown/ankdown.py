@@ -218,8 +218,9 @@ def cards_to_apkg(cards, output_name, deckname=None):
     package.media_files = list(media)
     package.write_to_file(output_name)
 
-def main(arguments):
+def main():
     """Run the thing."""
+    arguments = docopt(__doc__, version=VERSION)
 
     in_arg = arguments['-i']
     out_arg = arguments['-o']
@@ -243,5 +244,4 @@ def main(arguments):
 
 
 if __name__ == "__main__":
-    ARGUMENTS = docopt(__doc__, version=VERSION)
-    exit(main(ARGUMENTS))
+    exit(main())
