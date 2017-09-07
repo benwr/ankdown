@@ -47,6 +47,9 @@ import random
 import re
 import sys
 
+import misaka
+import genanki
+
 from docopt import docopt
 
 VERSION = "0.1.2"
@@ -217,9 +220,6 @@ def cards_to_apkg(cards, output_name, deckname=None):
 
 def main():
     """Run the thing."""
-    import misaka
-    import genanki
-
     arguments = docopt(__doc__, version=VERSION)
 
     in_arg = arguments['-i']
