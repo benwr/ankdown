@@ -227,7 +227,7 @@ def cards_to_apkg(cards, output_name, deckname=None):
     media = set()
     for i, card in enumerate(cards):
         if len(card) > 3:
-            card = card[:2]
+            card = card[:3]
         else:
             while len(card) < 3:
                 card.append('')
