@@ -18,7 +18,7 @@ First Card Back: $\\text{TeX inline math}$
 
 first, card, tags
 
-%%
+---
 
 Second Card Front:
 
@@ -55,7 +55,7 @@ import genanki
 
 from docopt import docopt
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 
 def convert_to_card_text(fields, separator="\t"):
@@ -210,7 +210,16 @@ def cards_to_apkg(cards, output_name, deckname=None):
                 "qfmt": "{{Question}}",
                 "afmt": "{{FrontSide}}<hr id='answer'>{{Answer}}",
             },
-        ]
+        ],
+        css="""
+        .card {
+            font-family: arial;
+            font-size: 20px;
+            text-align: center;
+            color: black;
+            background-color: white;
+        }
+        """,
     )
     deck_id = random.randrange(1 << 30, 1 << 31)
     deck = genanki.Deck(deck_id, deckname or "Ankdown")
