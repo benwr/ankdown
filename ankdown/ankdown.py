@@ -30,19 +30,22 @@ Second Card Back (note that tags are optional)
 ```
 
 Usage:
-    ankdown.py [-i INFILE] [-o OUTFILE | -p PACKAGENAME [-d DECKNAME]]
+    ankdown.py [-i INFILE | -r DIR] [-o OUTFILE | -p PACKAGENAME [-d DECKNAME]]
 
 Options:
     -h --help   Show this help message
     --version   Show version
 
-    -o OUTFILE  Put the results in OUTFILE, rather than stdout
-    -i INFILE   Read the input from INFILE, rather than stdin. The -p method is preferred.
-    -p PACKAGE  Instead of a .txt file, produce a .apkg file. This method is recommended.
-    -d DECKNAME When producing a .apkg, this is the name of the deck to use.
+    -i INFILE     Read the input from INFILE, rather than stdin.
+    -r DIR        Recursively visit DIR, accumulating cards from `.md` files.
+
+    -o OUTFILE    Put the results in OUTFILE, still as tab-delimited text
+    -p PACKAGE    Instead of a .txt file, produce a .apkg file. recommended.
+    -d DECKNAME   When producing a .apkg, this is the name of the deck to use.
 """
 
 import hashlib
+import os
 import random
 import re
 import sys
@@ -52,7 +55,7 @@ import genanki
 
 from docopt import docopt
 
-VERSION = "0.1.2"
+VERSION = "0.2.0"
 
 
 def convert_to_card_text(fields, separator="\t"):
@@ -62,7 +65,7 @@ def convert_to_card_text(fields, separator="\t"):
 
 def html_from_math_and_markdown(fieldtext):
     """Turn a math and markdown piece of text into an HTML and Anki-math piece of text."""
-    
+
     # NOTE(ben): This is the hackiest of the hacky.
 
     # Basically, we find all the things that look like they're delimited by `$$` signs,
@@ -139,7 +142,7 @@ def produce_cards(infile):
     current_fields = []
     for line in infile:
         stripped = line.strip()
-        if stripped == "%%":
+        if stripped == "%%" or stripped == "---":
             current_fields.append(compile_field(current_field_lines, field_n=len(current_fields)))
             yield current_fields
             current_fields = []
@@ -155,10 +158,22 @@ def produce_cards(infile):
     if current_fields:
         yield current_fields
 
+
+def cards_from_dir(dirname):
+    """Walk a directory and produce the cards found there, one by one."""
+    for parent_dir, _, files in os.walk(dirname):
+        for fn in files:
+            if fn.endswith(".md") or fn.endswith(".markdown"):
+                with open(os.path.join(parent_dir, fn), "r") as f:
+                    for card in produce_cards(f):
+                        yield card
+
+
 def cards_to_textfile(cards, outfile):
     """Take an iterable of cards, and turn them into a text file that Anki can read."""
     for card in cards:
         outfile.write(convert_to_card_text(card))
+
 
 def media_references(card):
     """Find all media references in a card"""
@@ -169,13 +184,16 @@ def media_references(card):
         for match in re.finditer(r'\[sound:(.*)\]', field):
             yield match.group(1)
 
+
 def simple_hash(text):
-    # Ugh; why can't this just be hash(thing)
+    """MD5 of text, mod 2^31. Probably not a great hash function."""
     h = hashlib.md5()
     h.update(text.encode("utf-8"))
     return int(h.hexdigest(), 16) % (1 << 31)
 
+
 def cards_to_apkg(cards, output_name, deckname=None):
+    """Take an iterable of the cards, and put a .apkg in a file called output_name."""
     model_name = "Ankdown Model"
     model_id = simple_hash(model_name)
     model = genanki.Model(
@@ -218,6 +236,7 @@ def cards_to_apkg(cards, output_name, deckname=None):
     package.media_files = list(media)
     package.write_to_file(output_name)
 
+
 def main():
     """Run the thing."""
     arguments = docopt(__doc__, version=VERSION)
@@ -226,21 +245,30 @@ def main():
     out_arg = arguments['-o']
     pkg_arg = arguments['-p']
     deck_arg = arguments['-d']
+    recur_dir= arguments['-r']
 
-    if in_arg:
-        infile = open(in_arg, 'r')
+    # Make a card iterator to produce cards one at a time
+    need_to_close_infile = False
+    if recur_dir:
+        card_iterator = cards_from_dir(recur_dir)
     else:
-        infile = sys.stdin
+        if in_arg:
+            infile = open(in_arg, 'r')
+            need_to_close_infile = True
+        else:
+            infile = sys.stdin
+        card_iterator = produce_cards(infile)
 
     if pkg_arg:
-        cards_to_apkg(produce_cards(infile), pkg_arg, deck_arg)
+        cards_to_apkg(card_iterator, pkg_arg, deck_arg)
     elif out_arg:
         with open(out_arg, 'w') as outfile:
-            return cards_to_textfile(produce_cards(infile), outfile)
+            return cards_to_textfile(card_iterator, outfile)
     else:
-        return cards_to_textfile(produce_cards(infile), sys.stdout)
+        return cards_to_textfile(card_iterator, sys.stdout)
 
-    infile.close()
+    if need_to_close_infile:
+        infile.close()
 
 
 if __name__ == "__main__":

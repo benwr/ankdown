@@ -1,18 +1,18 @@
 from os import path
 
-from codecs import open
+from codecs import open as codec_open
 from setuptools import setup, find_packages
 
-here = path.abspath(path.dirname(__file__))
+HERE = path.abspath(path.dirname(__file__))
 
-with open(path.join(here, 'README.md'), encoding='utf-8') as f:
-    long_description = f.read()
+with codec_open(path.join(HERE, 'README.md'), encoding='utf-8') as f:
+    LONG_DESCRIPTION = f.read()
 
 setup(
     name="ankdown",
-    version="0.1.2",
+    version="0.2.0",
     description="A utility for converting Markdown into Anki cards",
-    long_description=long_description,
+    long_description=LONG_DESCRIPTION,
     url="https://github.com/benwr/ankdown",
 
     author="Ben Weinstein-Raun",
