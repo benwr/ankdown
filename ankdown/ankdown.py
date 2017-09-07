@@ -194,6 +194,8 @@ def simple_hash(text):
 
 def cards_to_apkg(cards, output_name, deckname=None):
     """Take an iterable of the cards, and put a .apkg in a file called output_name."""
+    # TODO(ben): Media references should be relative to the card rather than the
+    # script's working directory
     model_name = "Ankdown Model"
     model_id = simple_hash(model_name)
     model = genanki.Model(
