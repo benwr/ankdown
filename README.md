@@ -36,7 +36,7 @@ $$\mathbb{E}[f(x)] = \sum_x p(x)f(x)$$
 
 math, probability
 
-%%
+---
 ```
 
 Each of the solitary `%` signs is a field separator: the first
@@ -44,9 +44,9 @@ field is the front of the card by default, the second field is
 the back of the card, and subsequent fields can contain whatever
 you want them to (all fields after the second are optional).
 
-Each of the double `%%` signs represent a card boundary.
+Each of the `---` (or double `%%`) signs represent a card boundary.
 
-The tool only needs the `%` signs to be alone on their own lines,
+The tool only needs these separators to be alone on their own lines,
 but most markdown editors will work better if you separate them from
 other text with empty lines, so that they're treated as their own
 paragraphs.
@@ -56,6 +56,9 @@ paragraphs.
 To compile the cards, put them in a file (e.g. `notes.md`), and run
 `ankdown -p notes.apkg -d Notes -i notes.md`. This will create a file,
 "notes.apkg", containing a deck called "Notes".
+
+You can also specify a directory (by passing `-r DIR`) to walk
+recursively, accumulating cards from all files named "*.md".
 
 To add them to Anki, go to File > Import, and select the file you created
 (e.g. `notes.apkg`).
