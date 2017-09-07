@@ -52,7 +52,7 @@ import genanki
 
 from docopt import docopt
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 
 def convert_to_card_text(fields, separator="\t"):
@@ -195,7 +195,7 @@ def cards_to_apkg(cards, output_name, deckname=None):
         ]
     )
     deck_id = random.randrange(1 << 30, 1 << 31)
-    deck = genanki.Deck(deck_id, deckname)
+    deck = genanki.Deck(deck_id, deckname or "Ankdown")
 
     media = set()
     for i, card in enumerate(cards):

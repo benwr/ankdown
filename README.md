@@ -17,7 +17,13 @@ your decks.
 **NOTE** This program requires _Python 3_, along with the
 packages in requirements.txt
 
-Write a card in the following format:
+## Installing
+
+Ankdown can be installed by doing `pip3 install ankdown`.
+
+## Writing Cards
+
+Cards are written in the following format:
 
 ```markdown
 Expected Value of $f(x)$
@@ -45,14 +51,26 @@ but most markdown editors will work better if you separate them from
 other text with empty lines, so that they're treated as their own
 paragraphs.
 
+## Running Ankdown
+
 To compile the cards, put them in a file (e.g. `notes.md`), and run
-them through `python ankdown.py -p notes.apkg -d Notes -i notes.md`.
+`ankdown -p notes.apkg -d Notes -i notes.md`. This will create a file,
+"notes.apkg", containing a deck called "Notes".
 
 To add them to Anki, go to File > Import, and select the file you created
 (e.g. `notes.apkg`).
 
-**IMPORTANT**: When using the text format rather than the .apkg,
-make sure that the separator is set to `\t`, you've selected the deck
-you want to modify, and that "Allow HTML" is checked.
+**IMPORTANT**: When using the text format rather than the .apkg
+(not recommended) make sure that the separator is set to `\t`,
+you've selected the deck you want to modify, and that "Allow HTML"
+is checked.
 
 Press "Import", and you should be good to go.
+
+## Updating Cards
+
+When you want to modify a card, just run your deck through the above
+process after changing the markdown file. Anki should notice, and update
+the card. This is done by giving the cards in your deck sequential IDs.
+This breaks down when you want to _remove_ a card, though. In that
+case, you'll want to delete the whole deck and reload it.
