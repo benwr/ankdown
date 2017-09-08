@@ -30,11 +30,11 @@ Second Card Back (note that tags are optional)
 ```
 
 Usage:
-    ankdown.py [-i INFILE | -r DIR] [-o OUTFILE | -p PACKAGENAME [-d DECKNAME]]
+    ankdown.py [-i INFILE | -r DIR] [-o OUTFILE | -p PACKAGENAME [-d DECKNAME | -D]]
 
 Options:
-    -h --help   Show this help message
-    --version   Show version
+    -h --help     Show this help message
+    --version     Show version
 
     -i INFILE     Read the input from INFILE, rather than stdin.
     -r DIR        Recursively visit DIR, accumulating cards from `.md` files.
@@ -42,6 +42,8 @@ Options:
     -o OUTFILE    Put the results in OUTFILE, still as tab-delimited text
     -p PACKAGE    Instead of a .txt file, produce a .apkg file. recommended.
     -d DECKNAME   When producing a .apkg, this is the name of the deck to use.
+
+    -D            Automatically determine deck names, based on file and directory names.
 """
 
 import hashlib
@@ -55,7 +57,7 @@ import genanki
 
 from docopt import docopt
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 
 def simple_hash(text):
@@ -96,9 +98,10 @@ class Card(object):
         """,
     )
 
-    def __init__(self, filename=None):
+    def __init__(self, filename=None, deckname=None):
         self.fields = []
         self.filename = filename
+        self.deckname = deckname
 
     def has_data(self):
         """True if we have any fields filled in."""
@@ -124,9 +127,16 @@ class Card(object):
         """Produce a tab-separated string containing the fields."""
         return separator.join(self.fields) + "\n"
 
-    def to_genanki_note(self, guid=None):
+    def to_genanki_note(self, deck_index=None):
         """Produce a genanki.Note with the specified guid."""
-        return genanki.Note(model=Card.MODEL, fields=self.fields, guid=guid)
+        if deck_index is None:
+            deck_index = random.randrange(1 << 30, 1 << 31)
+
+        if self.deckname is not None:
+            note_id = (simple_hash(self.deckname) + deck_index)
+        else:
+            note_id = random.randrange(1 << 30, 1 << 31)
+        return genanki.Note(model=Card.MODEL, fields=self.fields, guid=note_id)
 
     def make_absolute_from_relative(self, filename):
         """Take a filename relative to the card, and make it absolute."""
@@ -149,6 +159,14 @@ class Card(object):
             for match in re.finditer(r'\[sound:(.*?)\]', field):
                 yield self.make_absolute_from_relative(match.group(1))
 
+
+class DeckCollection(dict):
+    """Defaultdict for decks, but with stored name."""
+    def __getitem__(self, deckname):
+        if deckname not in self:
+            deck_id = random.randrange(1 << 30, 1 << 31)
+            self[deckname] = genanki.Deck(deck_id, deckname)
+        return super(DeckCollection, self).__getitem__(deckname)
 
 def sub_for_matches(text, match_iter, sentinel):
     """Substitute a sentinel for every match in the iterable.
@@ -218,49 +236,60 @@ def html_from_math_and_markdown(fieldtext):
     return ''.join(reconstructable_text)
 
 
-def compile_field(field_lines, markdown):
+def compile_field(field_lines, is_markdown):
     """Turn field lines into an HTML field suitable for Anki."""
     fieldtext = '\n'.join(field_lines)
-    if markdown:
+    if is_markdown:
         result = html_from_math_and_markdown(fieldtext)
     else:
         result = fieldtext
     return result.replace("\n", " ")
 
 
-def produce_cards(infile, filename=None):
+def produce_cards(infile, filename=None, deckname=None):
     """Given the markdown and math in infile, produce the intended result cards."""
+    if deckname is None:
+        deckname = "Ankdown Deck"
     current_field_lines = []
-    current_card = Card(filename)
+    current_card = Card(filename, deckname=deckname)
     for line in infile:
         stripped = line.strip()
         if stripped in ["%%", "---", "%"]:
-            markdown = not current_card.has_front_and_back()
-            field = compile_field(current_field_lines, markdown=markdown)
+            is_markdown = not current_card.has_front_and_back()
+            field = compile_field(current_field_lines, is_markdown=is_markdown)
             current_card.add_field(field)
             current_field_lines = []
             if stripped in ["%%", "---"]:
                 yield current_card
-                current_card = Card(filename)
+                current_card = Card(filename, deckname=deckname)
         else:
             current_field_lines.append(line)
 
     if current_field_lines:
-        markdown = not current_card.has_front_and_back()
-        field = compile_field(current_field_lines, markdown=markdown)
+        is_markdown = not current_card.has_front_and_back()
+        field = compile_field(current_field_lines, is_markdown=is_markdown)
         current_card.add_field(field)
     if current_card.has_data():
         yield current_card
 
 
-def cards_from_dir(dirname):
+def cards_from_dir(dirname, deckname=None):
     """Walk a directory and produce the cards found there, one by one."""
     for parent_dir, _, files in os.walk(dirname):
         for fn in files:
             if fn.endswith(".md") or fn.endswith(".markdown"):
+                if deckname is None:
+                    if parent_dir == ".":
+                        # Fall back on filename if this is invoked from the
+                        # directory containing the md file
+                        this_deck_name = fn.rsplit(".", 1)[0]
+                    else:
+                        this_deck_name = os.path.basename(parent_dir)
+                else:
+                    this_deck_name = deckname
                 path = os.path.join(parent_dir, fn)
                 with open(os.path.join(parent_dir, fn), "r") as f:
-                    for card in produce_cards(f, filename=path):
+                    for card in produce_cards(f, filename=path, deckname=this_deck_name):
                         yield card
 
 
@@ -270,24 +299,23 @@ def cards_to_textfile(cards, outfile):
         outfile.write(card.to_character_separated_line())
 
 
-def cards_to_apkg(cards, output_name, deckname=None):
+def cards_to_apkg(cards, output_name):
     """Take an iterable of the cards, and put a .apkg in a file called output_name."""
-    deck_id = random.randrange(1 << 30, 1 << 31)
-    deck = genanki.Deck(deck_id, deckname or "Ankdown")
+
+    # NOTE(ben): I'd rather have this function take an open file as a parameter
+    # than take the filename to write to, but I'm constrained by the genanki API
+
+    decks = DeckCollection()
 
     media = set()
-    for i, card in enumerate(cards):
+    for card in cards:
         card.finalize()
         for media_reference in card.media_references():
             media.add(media_reference)
-        if deckname is not None:
-            note_id = (simple_hash(deckname) + i)
-        else:
-            note_id = random.randrange(1 << 30, 1 << 31)
-        deck.add_note(card.to_genanki_note(guid=note_id))
+        deck_index = len(decks[card.deckname].notes)
+        decks[card.deckname].add_note(card.to_genanki_note(deck_index=deck_index))
 
-    package = genanki.Package(deck)
-    package.media_files = list(media)
+    package = genanki.Package(deck_or_decks=decks.values(), media_files=list(media))
     package.write_to_file(output_name)
 
 
@@ -299,12 +327,16 @@ def main():
     out_arg = arguments['-o']
     pkg_arg = arguments['-p']
     deck_arg = arguments['-d']
+    use_filenames_as_decknames = arguments['-D']
     recur_dir = arguments['-r']
 
     # Make a card iterator to produce cards one at a time
     need_to_close_infile = False
     if recur_dir:
-        card_iterator = cards_from_dir(recur_dir)
+        if use_filenames_as_decknames:
+            card_iterator = cards_from_dir(recur_dir)
+        else:
+            card_iterator = cards_from_dir(recur_dir, deckname=deck_arg)
     else:
         if in_arg:
             infile = open(in_arg, 'r')
@@ -314,7 +346,7 @@ def main():
         card_iterator = produce_cards(infile)
 
     if pkg_arg:
-        cards_to_apkg(card_iterator, pkg_arg, deck_arg)
+        cards_to_apkg(card_iterator, pkg_arg)
     elif out_arg:
         with open(out_arg, 'w') as outfile:
             return cards_to_textfile(card_iterator, outfile)
