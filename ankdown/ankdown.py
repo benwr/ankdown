@@ -55,7 +55,7 @@ import genanki
 
 from docopt import docopt
 
-VERSION = "0.2.1"
+VERSION = "0.3.0"
 
 
 def simple_hash(text):
@@ -144,9 +144,9 @@ class Card(object):
         """Find all media references in a card"""
         for field in self.fields:
             # Find HTML images, at least. Maybe some other things.
-            for match in re.finditer(r'src="([^"]*)"', field):
+            for match in re.finditer(r'src="([^"]*?)"', field):
                 yield self.make_absolute_from_relative(match.group(1))
-            for match in re.finditer(r'\[sound:(.*)\]', field):
+            for match in re.finditer(r'\[sound:(.*?)\]', field):
                 yield self.make_absolute_from_relative(match.group(1))
 
 
