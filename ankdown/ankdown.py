@@ -58,10 +58,115 @@ from docopt import docopt
 VERSION = "0.2.1"
 
 
-def convert_to_card_text(fields, separator="\t"):
-    """Take a list of compiled fields, and turn them into separated text."""
-    result = separator.join(fields) + "\n"
-    return result
+def simple_hash(text):
+    """MD5 of text, mod 2^31. Probably not a great hash function."""
+    h = hashlib.md5()
+    h.update(text.encode("utf-8"))
+    return int(h.hexdigest(), 16) % (1 << 31)
+
+
+class Card(object):
+    """A single anki card."""
+
+    MODEL_NAME = "Ankdown Model"
+    MODEL_ID = simple_hash(MODEL_NAME)
+    MODEL = genanki.Model(
+        MODEL_ID,
+        MODEL_NAME,
+        fields=[
+            {"name": "Question"},
+            {"name": "Answer"},
+            {"name": "Tags"},
+        ],
+        templates=[
+            {
+                "name": "Ankdown Card",
+                "qfmt": "{{Question}}",
+                "afmt": "{{FrontSide}}<hr id='answer'>{{Answer}}",
+            },
+        ],
+        css="""
+        .card {
+            font-family: arial;
+            font-size: 20px;
+            text-align: center;
+            color: black;
+            background-color: white;
+        }
+        """,
+    )
+
+    def __init__(self, filename=None):
+        self.fields = []
+        self.filename = filename
+
+    def has_data(self):
+        """True if we have any fields filled in."""
+        return len(self.fields) > 0
+
+    def has_front_and_back(self):
+        """True if we have at least two fields filled in."""
+        return len(self.fields) >= 2
+
+    def add_field(self, contents):
+        """Add given text to a new field."""
+        self.fields.append(contents)
+
+    def finalize(self):
+        """Ensure proper shape, for extraction into result formats."""
+        if len(self.fields) > 3:
+            self.fields = self.fields[:3]
+        else:
+            while len(self.fields) < 3:
+                self.fields.append('')
+
+    def to_character_separated_line(self, separator="\t"):
+        """Produce a tab-separated string containing the fields."""
+        return separator.join(self.fields) + "\n"
+
+    def to_genanki_note(self, guid=None):
+        """Produce a genanki.Note with the specified guid."""
+        return genanki.Note(model=Card.MODEL, fields=self.fields, guid=guid)
+
+    def make_absolute_from_relative(self, filename):
+        """Take a filename relative to the card, and make it absolute."""
+        if os.path.isabs(filename):
+            return filename
+        else:
+            if self.filename:
+                dirname = os.path.dirname(self.filename)
+            else:
+                dirname = "."
+            return os.path.abspath(os.path.join(dirname, filename))
+
+    def media_references(self):
+        """Find all media references in a card"""
+        for field in self.fields:
+            # Find HTML images, at least. Maybe some other things.
+            for match in re.finditer(r'src="([^"]*)"', field):
+                yield self.make_absolute_from_relative(match.group(1))
+            for match in re.finditer(r'\[sound:(.*)\]', field):
+                yield self.make_absolute_from_relative(match.group(1))
+
+
+def sub_for_matches(text, match_iter, sentinel):
+    """Substitute a sentinel for every match in the iterable.
+
+    Returns the substituted text and the replaced groups. This only works if
+    the matches have exactly one match group (so that match.group(1) returns
+    exactly that group).
+    """
+    text_outside_matches = []
+    text_inside_matches = []
+    last_match_end = 0
+    for match in match_iter:
+        text_outside_matches.append(text[last_match_end:match.start()])
+        text_inside_matches.append(match.group(1))
+        last_match_end = match.end()
+    text_outside_matches.append(text[last_match_end:])
+    text_with_substitutions = sentinel.join(text_outside_matches)
+    return text_with_substitutions, text_inside_matches
+
 
 def html_from_math_and_markdown(fieldtext):
     """Turn a math and markdown piece of text into an HTML and Anki-math piece of text."""
@@ -82,27 +187,13 @@ def html_from_math_and_markdown(fieldtext):
     ENV_SENTINEL = '\1'
     INLINE_SENTINEL = '\2'
 
-    text_outside_envs = []
-    text_inside_envs = []
-    last_env_end = 0
-    for match in re.finditer(r"\$\$(.*)\$\$", fieldtext, re.MULTILINE | re.DOTALL):
-        text_outside_envs.append(fieldtext[last_env_end:match.start()])
-        text_inside_envs.append(match.group(1))
-        last_env_end = match.end()
-    text_outside_envs.append(fieldtext[last_env_end:])
+    fieldtext_with_envs_replaced, text_inside_envs = sub_for_matches(
+        fieldtext, re.finditer(
+            r"\$\$(.*?)\$\$", fieldtext, re.MULTILINE | re.DOTALL), ENV_SENTINEL)
 
-    fieldtext_with_envs_replaced = ENV_SENTINEL.join(text_outside_envs)
-
-    text_outside_inlines = []
-    text_inside_inlines = []
-    last_inline_end = 0
-    for match in re.finditer(r"\$(.*\S)\$", fieldtext_with_envs_replaced):
-        text_outside_inlines.append(fieldtext_with_envs_replaced[last_inline_end:match.start()])
-        text_inside_inlines.append(match.group(1))
-        last_inline_end = match.end()
-    text_outside_inlines.append(fieldtext_with_envs_replaced[last_inline_end:])
-
-    sentinel_text = INLINE_SENTINEL.join(text_outside_inlines)
+    sentinel_text, text_inside_inlines = sub_for_matches(
+        fieldtext_with_envs_replaced, re.finditer(
+            r"\$(.*?\S)\$", fieldtext_with_envs_replaced), INLINE_SENTINEL)
 
     html_with_sentinels = misaka.html(sentinel_text, extensions=("fenced-code",))
 
@@ -126,37 +217,39 @@ def html_from_math_and_markdown(fieldtext):
     return ''.join(reconstructable_text)
 
 
-def compile_field(field_lines, field_n=0):
+def compile_field(field_lines, markdown):
     """Turn field lines into an HTML field suitable for Anki."""
     fieldtext = '\n'.join(field_lines)
-    if field_n < 2:
+    if markdown:
         result = html_from_math_and_markdown(fieldtext)
     else:
         result = fieldtext
     return result.replace("\n", " ")
 
 
-def produce_cards(infile):
+def produce_cards(infile, filename=None):
     """Given the markdown and math in infile, produce the intended result cards."""
     current_field_lines = []
-    current_fields = []
+    current_card = Card(filename)
     for line in infile:
         stripped = line.strip()
-        if stripped == "%%" or stripped == "---":
-            current_fields.append(compile_field(current_field_lines, field_n=len(current_fields)))
-            yield current_fields
-            current_fields = []
+        if stripped in ["%%", "---", "%"]:
+            markdown = not current_card.has_front_and_back()
+            field = compile_field(current_field_lines, markdown=markdown)
+            current_card.add_field(field)
             current_field_lines = []
-        elif stripped == "%":
-            current_fields.append(compile_field(current_field_lines, field_n=len(current_fields)))
-            current_field_lines = []
+            if stripped in ["%%", "---"]:
+                yield current_card
+                current_card = Card(filename)
         else:
             current_field_lines.append(line)
 
     if current_field_lines:
-        current_fields.append(compile_field(current_field_lines, field_n=len(current_fields)))
-    if current_fields:
-        yield current_fields
+        markdown = not current_card.has_front_and_back()
+        field = compile_field(current_field_lines, markdown=markdown)
+        current_card.add_field(field)
+    if current_card.has_data():
+        yield current_card
 
 
 def cards_from_dir(dirname):
@@ -172,76 +265,25 @@ def cards_from_dir(dirname):
 def cards_to_textfile(cards, outfile):
     """Take an iterable of cards, and turn them into a text file that Anki can read."""
     for card in cards:
-        outfile.write(convert_to_card_text(card))
+        outfile.write(card.to_character_separated_line())
 
-
-def media_references(card):
-    """Find all media references in a card"""
-    for field in card:
-        # Find HTML images, at least. Maybe some other things.
-        for match in re.finditer(r'src="([^"]*)"', field):
-            yield match.group(1)
-        for match in re.finditer(r'\[sound:(.*)\]', field):
-            yield match.group(1)
-
-
-def simple_hash(text):
-    """MD5 of text, mod 2^31. Probably not a great hash function."""
-    h = hashlib.md5()
-    h.update(text.encode("utf-8"))
-    return int(h.hexdigest(), 16) % (1 << 31)
 
 
 def cards_to_apkg(cards, output_name, deckname=None):
     """Take an iterable of the cards, and put a .apkg in a file called output_name."""
-    # TODO(ben): Media references should be relative to the card rather than the
-    # script's working directory
-    model_name = "Ankdown Model"
-    model_id = simple_hash(model_name)
-    model = genanki.Model(
-        model_id,
-        model_name,
-        fields=[
-            {"name": "Question"},
-            {"name": "Answer"},
-            {"name": "Tags"},
-        ],
-        templates=[
-            {
-                "name": "Ankdown Card",
-                "qfmt": "{{Question}}",
-                "afmt": "{{FrontSide}}<hr id='answer'>{{Answer}}",
-            },
-        ],
-        css="""
-        .card {
-            font-family: arial;
-            font-size: 20px;
-            text-align: center;
-            color: black;
-            background-color: white;
-        }
-        """,
-    )
     deck_id = random.randrange(1 << 30, 1 << 31)
     deck = genanki.Deck(deck_id, deckname or "Ankdown")
 
     media = set()
     for i, card in enumerate(cards):
-        if len(card) > 3:
-            card = card[:3]
-        else:
-            while len(card) < 3:
-                card.append('')
-
-        for media_reference in media_references(card):
+        card.finalize()
+        for media_reference in card.get_media_references():
             media.add(media_reference)
         if deckname is not None:
             note_id = (simple_hash(deckname) + i)
         else:
             note_id = random.randrange(1 << 30, 1 << 31)
-        note = genanki.Note(model=model, fields=card, guid=note_id)
-        deck.add_note(note)
+        deck.add_note(card.to_genanki_note(guid=note_id))
 
     package = genanki.Package(deck)
     package.media_files = list(media)
@@ -256,7 +298,7 @@ def main():
     out_arg = arguments['-o']
     pkg_arg = arguments['-p']
     deck_arg = arguments['-d']
-    recur_dir= arguments['-r']
+    recur_dir = arguments['-r']
 
     # Make a card iterator to produce cards one at a time
     need_to_close_infile = False
