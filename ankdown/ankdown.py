@@ -131,13 +131,14 @@ class Card(object):
     def make_absolute_from_relative(self, filename):
         """Take a filename relative to the card, and make it absolute."""
         if os.path.isabs(filename):
-            return filename
+            result = filename
         else:
             if self.filename:
                 dirname = os.path.dirname(self.filename)
             else:
                 dirname = "."
-            return os.path.abspath(os.path.join(dirname, filename))
+            result = os.path.abspath(os.path.join(dirname, filename))
+        return result
 
     def media_references(self):
         """Find all media references in a card"""
@@ -257,8 +258,9 @@ def cards_from_dir(dirname):
     for parent_dir, _, files in os.walk(dirname):
         for fn in files:
             if fn.endswith(".md") or fn.endswith(".markdown"):
+                path = os.path.join(parent_dir, fn)
                 with open(os.path.join(parent_dir, fn), "r") as f:
-                    for card in produce_cards(f):
+                    for card in produce_cards(f, filename=path):
                         yield card
 
 
@@ -266,7 +268,6 @@ def cards_to_textfile(cards, outfile):
     """Take an iterable of cards, and turn them into a text file that Anki can read."""
     for card in cards:
         outfile.write(card.to_character_separated_line())
-
 
 
 def cards_to_apkg(cards, output_name, deckname=None):
@@ -277,7 +278,7 @@ def cards_to_apkg(cards, output_name, deckname=None):
     media = set()
     for i, card in enumerate(cards):
         card.finalize()
-        for media_reference in card.get_media_references():
+        for media_reference in card.media_references():
             media.add(media_reference)
         if deckname is not None:
             note_id = (simple_hash(deckname) + i)
