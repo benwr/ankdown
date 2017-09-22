@@ -89,11 +89,15 @@ class Card(object):
         ],
         css="""
         .card {
-            font-family: arial;
+            font-family: 'Crimson Text', 'arial';
             font-size: 20px;
             text-align: center;
             color: black;
             background-color: white;
+        }
+
+        .latex {
+            height: 0.8em;
         }
         """,
     )
