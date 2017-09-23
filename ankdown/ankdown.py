@@ -242,7 +242,7 @@ def html_from_math_and_markdown(fieldtext):
 
 def compile_field(field_lines, is_markdown):
     """Turn field lines into an HTML field suitable for Anki."""
-    fieldtext = '\n'.join(field_lines)
+    fieldtext = ''.join(field_lines)
     if is_markdown:
         result = html_from_math_and_markdown(fieldtext)
     else:
@@ -347,7 +347,7 @@ def main():
             need_to_close_infile = True
         else:
             infile = sys.stdin
-        card_iterator = produce_cards(infile)
+        card_iterator = produce_cards(infile, deckname=deck_arg)
 
     if pkg_arg:
         cards_to_apkg(card_iterator, pkg_arg)
