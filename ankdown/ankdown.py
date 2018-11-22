@@ -84,7 +84,7 @@ class Card(object):
             {
                 "name": "Ankdown Card",
                 "qfmt": "{{Question}}",
-                "afmt": "{{FrontSide}}<hr id='answer'>{{Answer}}",
+                "afmt": "{{FrontSide}}<hr id='answer'><div class='latex-front'>{{Answer}}</div>",
             },
         ],
         css="""
@@ -98,6 +98,10 @@ class Card(object):
 
         .latex {
             height: 0.8em;
+        }
+        
+        .latex-front {
+            height: 5.0em;
         }
         """,
     )
