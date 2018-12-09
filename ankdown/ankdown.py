@@ -57,7 +57,7 @@ import genanki
 
 from docopt import docopt
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 
 
 def simple_hash(text):
