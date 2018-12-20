@@ -57,7 +57,7 @@ import genanki
 
 from docopt import docopt
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 
 
 def simple_hash(text):
@@ -106,9 +106,10 @@ class Card(object):
         """,
     )
 
-    def __init__(self, filename=None, deckname=None):
+    def __init__(self, filename=None, deckname=None, file_index=None):
         self.fields = []
         self.filename = filename
+        self.file_index = file_index
         self.deckname = deckname
 
     def has_data(self):
@@ -131,20 +132,22 @@ class Card(object):
             while len(self.fields) < 3:
                 self.fields.append('')
 
+    def guid(self, deck_index=None):
+        if self.filename is not None:
+            # This is okay because we only load files ending in ".md" or similar
+            return simple_hash(self.filename + str(self.file_index))
+        if self.deckname is not None and deck_index is not None:
+            return simple_hash(self.deckname) + deck_index
+        return random.randrange(1 << 30, 1 << 31)
+
     def to_character_separated_line(self, separator="\t"):
         """Produce a tab-separated string containing the fields."""
         return separator.join(self.fields) + "\n"
 
     def to_genanki_note(self, deck_index=None):
         """Produce a genanki.Note with the specified guid."""
-        if deck_index is None:
-            deck_index = random.randrange(1 << 30, 1 << 31)
-
-        if self.deckname is not None:
-            note_id = (simple_hash(self.deckname) + deck_index)
-        else:
-            note_id = random.randrange(1 << 30, 1 << 31)
-        return genanki.Note(model=Card.MODEL, fields=self.fields, guid=note_id)
+        guid = self.guid(deck_index=deck_index)
+        return genanki.Note(model=Card.MODEL, fields=self.fields, guid=guid)
 
     def make_absolute_from_relative(self, filename):
         """Take a filename relative to the card, and make it absolute."""
@@ -259,17 +262,19 @@ def produce_cards(infile, filename=None, deckname=None):
     if deckname is None:
         deckname = "Ankdown Deck"
     current_field_lines = []
-    current_card = Card(filename, deckname=deckname)
+    i = 0
+    current_card = Card(filename, deckname=deckname, file_index=i)
     for line in infile:
         stripped = line.strip()
-        if stripped in ["%%", "---", "%"]:
+        if stripped in {"%%", "---", "%"}:
             is_markdown = not current_card.has_front_and_back()
             field = compile_field(current_field_lines, is_markdown=is_markdown)
             current_card.add_field(field)
             current_field_lines = []
-            if stripped in ["%%", "---"]:
+            if stripped in {"%%", "---"}:
                 yield current_card
-                current_card = Card(filename, deckname=deckname)
+                i += 1
+                current_card = Card(filename, deckname=deckname, file_index=i)
         else:
             current_field_lines.append(line)
 
