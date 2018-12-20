@@ -57,7 +57,7 @@ import genanki
 
 from docopt import docopt
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 
 
 def simple_hash(text):
@@ -263,6 +263,9 @@ def produce_cards(infile, filename=None, deckname=None):
         deckname = "Ankdown Deck"
     current_field_lines = []
     i = 0
+    path, basename = os.path.split(filename)
+    deck_dir = os.path.basename(path)
+    filename = os.path.join(deck_dir, basename)
     current_card = Card(filename, deckname=deckname, file_index=i)
     for line in infile:
         stripped = line.strip()
@@ -334,6 +337,7 @@ def cards_to_apkg(cards, output_name):
 
 def main():
     """Run the thing."""
+
     arguments = docopt(__doc__, version=VERSION)
 
     in_arg = arguments['-i']
@@ -346,6 +350,7 @@ def main():
     # Make a card iterator to produce cards one at a time
     need_to_close_infile = False
     if recur_dir:
+        recur_dir = os.path.abspath(recur_dir)
         if use_filenames_as_decknames:
             card_iterator = cards_from_dir(recur_dir)
         else:
