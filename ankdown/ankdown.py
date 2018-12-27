@@ -15,7 +15,7 @@ First Card Front ![alt_text](local_image.png)
 
 %
 
-First Card Back: $\\text{TeX inline math}$
+First Card Back: \\(\\text{TeX inline math}\\)
 
 %
 
@@ -25,7 +25,7 @@ first, card, tags
 
 Second Card Front:
 
-$$ \\text{TeX Math environment} $$
+\\[\\text{TeX Math environment}\\]
 
 %
 
@@ -33,7 +33,7 @@ Second Card Back (note that tags are optional)
 ```
 
 Usage:
-    ankdown.py -r DIR -p PACKAGENAME
+    ankdown.py [-r DIR] [-p PACKAGENAME]
 
 Options:
     -h --help     Show this help message
@@ -43,6 +43,7 @@ Options:
 
     -p PACKAGE    Instead of a .txt file, produce a .apkg file. recommended.
 """
+
 
 import hashlib
 import os
@@ -69,15 +70,15 @@ def simple_hash(text):
 class Card(object):
     """A single anki card."""
 
+    # Anki 2.1 has mathjax built in, but ankidroid and other clients don't.
     MATHJAX_CONTENT = textwrap.dedent("""\
     <script type="text/x-mathjax-config">
     MathJax.Hub.processSectionDelay = 0;
     MathJax.Hub.Config({
       messageStyle: 'none',
-      // showProcessingMessages: false,
       tex2jax: {
-        inlineMath: [['$', '$']],
-        displayMath: [['$$', '$$']],
+        inlineMath: [['\\\\(', '\\\\)']],
+        displayMath: [['\\\\[', '\\\\]']],
         processEscapes: true
       }
     });
@@ -110,8 +111,8 @@ class Card(object):
         templates=[
             {
                 "name": "Ankdown Card",
-                "qfmt": "{{{{Question}}}} {0}".format(MATHJAX_CONTENT),
-                "afmt": "{{{{Question}}}}<hr id='answer'>{{{{Answer}}}} {0}".format(MATHJAX_CONTENT),
+                "qfmt": "{{{{Question}}}}\n{0}".format(MATHJAX_CONTENT),
+                "afmt": "{{{{Question}}}}<hr id='answer'>{{{{Answer}}}}\n{0}".format(MATHJAX_CONTENT),
             },
         ],
         css="""
@@ -175,23 +176,26 @@ class Card(object):
             abspath = os.path.normpath(os.path.join(self.deckdir(), filename))
         return (abspath, newname)
 
-    def media_references(self):
+    def determine_media_references(self):
         """Find all media references in a card"""
         for i, field in enumerate(self.fields):
             current_stage = field
-            for regex in [r'src="([^"]*?)"', r'\[sound:(.*?)\]']:
+            for regex in [r'src="([^"]*?)"']: # TODO not sure how this should work:, r'\[sound:(.*?)\]']:
                 results = []
 
                 def process_match(m):
                     initial_contents = m.group(1)
                     abspath, newpath = self.make_ref_pair(initial_contents)
                     results.append((abspath, newpath))
-                    return newpath
+                    return r'src="' + newpath + '"'
 
                 current_stage = re.sub(regex, process_match, current_stage)
 
                 for r in results:
                     yield r
+
+            # Anki seems to hate alt tags :(
+            self.fields[i] = re.sub(r'alt="[^"]*?"', '', current_stage)
 
 
 class DeckCollection(dict):
@@ -202,14 +206,22 @@ class DeckCollection(dict):
             self[deckname] = genanki.Deck(deck_id, deckname)
         return super(DeckCollection, self).__getitem__(deckname)
 
+def field_to_html(field):
+    # Need to extract the math in brackets so that it doesn't get
+    # markdowned.
+    for bracket in ["(", ")", "[", "]"]:
+        field = field.replace(r"\{}".format(bracket), r"\\{}".format(bracket))
+        # backslashes, man.
+
+    return misaka.html(field, extensions=("fenced-code", "math"))
+
 def compile_field(field_lines, is_markdown):
     """Turn field lines into an HTML field suitable for Anki."""
     fieldtext = ''.join(field_lines)
     if is_markdown:
-        result = misaka.html(fieldtext, extensions=("fenced-code",))
+        return field_to_html('\n'.join(field_lines))
     else:
-        result = fieldtext
-    return result.replace("\n", " ")
+        return fieldtext
 
 
 def produce_cards(filename):
@@ -258,7 +270,7 @@ def cards_to_apkg(cards, output_name):
     media = set()
     for card in cards:
         card.finalize()
-        for abspath, newpath in card.media_references():
+        for abspath, newpath in card.determine_media_references():
             copyfile(abspath, newpath) # This is inefficient but definitely works on all platforms.
             media.add(newpath)
         decks[card.deckname()].add_note(card.to_genanki_note())
