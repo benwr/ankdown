@@ -1,9 +1,12 @@
 #!/usr/bin/env python
-"""Ankdown: Convert delimited Markdown files into anki decks.
+"""Ankdown: Convert Markdown files into anki decks.
 
 This is a hacky script that I wrote because I wanted to use
 aesthetically pleasing editing tools to make anki cards, instead of
 the (somewhat annoying, imo) card editor in the anki desktop app.
+
+The math support is via MathJax, which is more full-featured (and
+much prettier) than Anki's builtin LaTeX support.
 
 The markdown inputs should look like this:
 
@@ -30,35 +33,29 @@ Second Card Back (note that tags are optional)
 ```
 
 Usage:
-    ankdown.py [-i INFILE | -r DIR] [-o OUTFILE | -p PACKAGENAME [-d DECKNAME | -D]]
+    ankdown.py -r DIR -p PACKAGENAME
 
 Options:
     -h --help     Show this help message
     --version     Show version
 
-    -i INFILE     Read the input from INFILE, rather than stdin.
     -r DIR        Recursively visit DIR, accumulating cards from `.md` files.
 
-    -o OUTFILE    Put the results in OUTFILE, still as tab-delimited text
     -p PACKAGE    Instead of a .txt file, produce a .apkg file. recommended.
-    -d DECKNAME   When producing a .apkg, this is the name of the deck to use.
-
-    -D            Automatically determine deck names, based on file and directory names.
 """
 
 import hashlib
 import os
 import random
-import re
 import sys
+import textwrap
 
 import misaka
 import genanki
 
 from docopt import docopt
 
-VERSION = "0.4.3"
-
+VERSION = "0.5.0"
 
 def simple_hash(text):
     """MD5 of text, mod 2^31. Probably not a great hash function."""
@@ -69,6 +66,34 @@ def simple_hash(text):
 
 class Card(object):
     """A single anki card."""
+
+    MATHJAX_CONTENT = textwrap.dedent("""\
+    <script type="text/x-mathjax-config">
+    MathJax.Hub.processSectionDelay = 0;
+    MathJax.Hub.Config({
+      messageStyle: 'none',
+      // showProcessingMessages: false,
+      tex2jax: {
+        inlineMath: [['$', '$']],
+        displayMath: [['$$', '$$']],
+        processEscapes: true
+      }
+    });
+    </script>
+    <script type="text/javascript">
+    (function() {
+      if (window.MathJax != null) {
+        var card = document.querySelector('.card');
+        MathJax.Hub.Queue(['Typeset', MathJax.Hub, card]);
+        return;
+      }
+      var script = document.createElement('script');
+      script.type = 'text/javascript';
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_CHTML';
+      document.body.appendChild(script);
+    })();
+    </script>
+    """)
 
     MODEL_NAME = "Ankdown Model"
     MODEL_ID = simple_hash(MODEL_NAME)
@@ -83,8 +108,8 @@ class Card(object):
         templates=[
             {
                 "name": "Ankdown Card",
-                "qfmt": "{{Question}}",
-                "afmt": "{{FrontSide}}<hr id='answer'><div class='latex-front'>{{Answer}}</div>",
+                "qfmt": "{{{{Question}}}} {0}".format(MATHJAX_CONTENT),
+                "afmt": "{{{{Question}}}}<hr id='answer'><div class='latex-front'>{{{{Answer}}}}</div> {0}".format(MATHJAX_CONTENT),
             },
         ],
         css="""
@@ -106,11 +131,12 @@ class Card(object):
         """,
     )
 
-    def __init__(self, filename=None, deckname=None, file_index=None):
+    def __init__(self, filename=None, deckname=None, file_index=None, absname=None):
         self.fields = []
         self.filename = filename
         self.file_index = file_index
         self.deckname = deckname
+        self.absname = absname
 
     def has_data(self):
         """True if we have any fields filled in."""
@@ -151,10 +177,15 @@ class Card(object):
 
     def make_absolute_from_relative(self, filename):
         """Take a filename relative to the card, and make it absolute."""
+        print('given filename: ', filename)
+        print('card absname: ', self.absname)
+        print('card filename: ', self.filename)
         if os.path.isabs(filename):
             result = filename
         else:
-            if self.filename:
+            if self.absname:
+                dirname = os.path.dirname(self.absname)
+            elif self.filename:
                 dirname = os.path.dirname(self.filename)
             else:
                 dirname = "."
@@ -179,79 +210,11 @@ class DeckCollection(dict):
             self[deckname] = genanki.Deck(deck_id, deckname)
         return super(DeckCollection, self).__getitem__(deckname)
 
-def sub_for_matches(text, match_iter, sentinel):
-    """Substitute a sentinel for every match in the iterable.
-
-    Returns the substituted text and the replaced groups. This only works if
-    the matches have exactly one match group (so that match.group(1) returns
-    exactly that group).
-    """
-    text_outside_matches = []
-    text_inside_matches = []
-    last_match_end = 0
-    for match in match_iter:
-        text_outside_matches.append(text[last_match_end:match.start()])
-        text_inside_matches.append(match.group(1))
-        last_match_end = match.end()
-    text_outside_matches.append(text[last_match_end:])
-    text_with_substitutions = sentinel.join(text_outside_matches)
-    return text_with_substitutions, text_inside_matches
-
-
-def html_from_math_and_markdown(fieldtext):
-    """Turn a math and markdown piece of text into an HTML and Anki-math piece of text."""
-
-    # NOTE(ben): This is the hackiest of the hacky.
-
-    # Basically, we find all the things that look like they're delimited by `$$` signs,
-    # store them, and replace them with a non-printable character that seems very
-    # unlikely to show up in anybody's code.
-    # Then we do the same for things that look like they're delimited by `$` signs, with
-    # a different nonprintable character.
-    # We run the result through the markdown compiler, hoping (well, I checked) that the
-    # nonprintable characters don't get modified or removed, and then we walk the html
-    # string and replace all the instances of the nonprintable characters with their
-    # corresponding (slightly modified) text.
-
-    # This could be slightly DRYer but it's not that bad.
-    ENV_SENTINEL = '\1'
-    INLINE_SENTINEL = '\2'
-
-    fieldtext_with_envs_replaced, text_inside_envs = sub_for_matches(
-        fieldtext, re.finditer(
-            r"\$\$(.*?)\$\$", fieldtext, re.MULTILINE | re.DOTALL), ENV_SENTINEL)
-
-    sentinel_text, text_inside_inlines = sub_for_matches(
-        fieldtext_with_envs_replaced, re.finditer(
-            r"\$(.*?\S)\$", fieldtext_with_envs_replaced), INLINE_SENTINEL)
-
-    html_with_sentinels = misaka.html(sentinel_text, extensions=("fenced-code",))
-
-    reconstructable_text = []
-    env_counter = 0
-    inline_counter = 0
-    for c in html_with_sentinels:
-        if c == ENV_SENTINEL:
-            reconstructable_text.append("[$$]")
-            reconstructable_text.append(text_inside_envs[env_counter])
-            reconstructable_text.append("[/$$]")
-            env_counter += 1
-        elif c == INLINE_SENTINEL:
-            reconstructable_text.append("[$]")
-            reconstructable_text.append(text_inside_inlines[inline_counter])
-            reconstructable_text.append("[/$]")
-            inline_counter += 1
-        else:
-            reconstructable_text.append(c)
-
-    return ''.join(reconstructable_text)
-
-
 def compile_field(field_lines, is_markdown):
     """Turn field lines into an HTML field suitable for Anki."""
     fieldtext = ''.join(field_lines)
     if is_markdown:
-        result = html_from_math_and_markdown(fieldtext)
+        result = misaka.html(fieldtext, extensions=("fenced-code",))
     else:
         result = fieldtext
     return result.replace("\n", " ")
@@ -265,19 +228,20 @@ def produce_cards(infile, filename=None, deckname=None):
     i = 0
     path, basename = os.path.split(filename)
     deck_dir = os.path.basename(path)
-    filename = os.path.join(deck_dir, basename)
-    current_card = Card(filename, deckname=deckname, file_index=i)
+    relfilename = os.path.join(deck_dir, basename)
+    print("producing cards from: ", filename)
+    current_card = Card(relfilename, deckname=deckname, file_index=i, absname=filename)
     for line in infile:
         stripped = line.strip()
-        if stripped in {"%%", "---", "%"}:
+        if stripped in {"---", "%"}:
             is_markdown = not current_card.has_front_and_back()
             field = compile_field(current_field_lines, is_markdown=is_markdown)
             current_card.add_field(field)
             current_field_lines = []
-            if stripped in {"%%", "---"}:
+            if stripped == "---":
                 yield current_card
                 i += 1
-                current_card = Card(filename, deckname=deckname, file_index=i)
+                current_card = Card(relfilename, deckname=deckname, file_index=i, absname=filename)
         else:
             current_field_lines.append(line)
 
@@ -303,17 +267,10 @@ def cards_from_dir(dirname, deckname=None):
                         this_deck_name = os.path.basename(parent_dir)
                 else:
                     this_deck_name = deckname
-                path = os.path.join(parent_dir, fn)
+                path = os.path.abspath(os.path.join(parent_dir, fn))
                 with open(os.path.join(parent_dir, fn), "r") as f:
                     for card in produce_cards(f, filename=path, deckname=this_deck_name):
                         yield card
-
-
-def cards_to_textfile(cards, outfile):
-    """Take an iterable of cards, and turn them into a text file that Anki can read."""
-    for card in cards:
-        outfile.write(card.to_character_separated_line())
-
 
 def cards_to_apkg(cards, output_name):
     """Take an iterable of the cards, and put a .apkg in a file called output_name."""
@@ -340,39 +297,15 @@ def main():
 
     arguments = docopt(__doc__, version=VERSION)
 
-    in_arg = arguments['-i']
-    out_arg = arguments['-o']
-    pkg_arg = arguments['-p']
-    deck_arg = arguments['-d']
-    use_filenames_as_decknames = arguments['-D']
-    recur_dir = arguments['-r']
+    pkg_arg = arguments.get('-p', 'AnkdownPkg.apkg')
+    recur_dir = arguments.get('-r', '.')
 
-    # Make a card iterator to produce cards one at a time
-    need_to_close_infile = False
-    if recur_dir:
-        recur_dir = os.path.abspath(recur_dir)
-        if use_filenames_as_decknames:
-            card_iterator = cards_from_dir(recur_dir)
-        else:
-            card_iterator = cards_from_dir(recur_dir, deckname=deck_arg)
-    else:
-        if in_arg:
-            infile = open(in_arg, 'r')
-            need_to_close_infile = True
-        else:
-            infile = sys.stdin
-        card_iterator = produce_cards(infile, deckname=deck_arg)
+    recur_dir = os.path.abspath(recur_dir)
+    pkg_arg = os.path.abspath(pkg_arg)
 
-    if pkg_arg:
-        cards_to_apkg(card_iterator, pkg_arg)
-    elif out_arg:
-        with open(out_arg, 'w') as outfile:
-            return cards_to_textfile(card_iterator, outfile)
-    else:
-        return cards_to_textfile(card_iterator, sys.stdout)
+    card_iterator = cards_from_dir(recur_dir)
 
-    if need_to_close_infile:
-        infile.close()
+    cards_to_apkg(card_iterator, pkg_arg)
 
 
 if __name__ == "__main__":
