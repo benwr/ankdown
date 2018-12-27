@@ -10,7 +10,7 @@ with codec_open(path.join(HERE, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="ankdown",
-    version="0.4.2",
+    version="0.5.0",
     description="A utility for converting Markdown into Anki cards",
     long_description=LONG_DESCRIPTION,
     url="https://github.com/benwr/ankdown",
@@ -37,7 +37,7 @@ setup(
     ],
     keywords="anki spaced-repetition markdown math latex",
     packages=find_packages(),
-    install_requires=['genanki>=0.4.0', 'misaka>=2.1.0', 'docopt>=0.6.2'],
+    install_requires=['genanki>=0.6.3', 'misaka>=2.1.0', 'docopt>=0.6.2'],
     entry_points={
         "console_scripts": [
             "ankdown=ankdown.ankdown:main"
