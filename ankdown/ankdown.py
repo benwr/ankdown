@@ -46,9 +46,11 @@ Options:
 
 import hashlib
 import os
-import random
-import sys
+import re
+import tempfile
 import textwrap
+
+from shutil import copyfile
 
 import misaka
 import genanki
@@ -95,7 +97,7 @@ class Card(object):
     </script>
     """)
 
-    MODEL_NAME = "Ankdown Model"
+    MODEL_NAME = "Ankdown Model 2"
     MODEL_ID = simple_hash(MODEL_NAME)
     MODEL = genanki.Model(
         MODEL_ID,
@@ -109,46 +111,44 @@ class Card(object):
             {
                 "name": "Ankdown Card",
                 "qfmt": "{{{{Question}}}} {0}".format(MATHJAX_CONTENT),
-                "afmt": "{{{{Question}}}}<hr id='answer'><div class='latex-front'>{{{{Answer}}}}</div> {0}".format(MATHJAX_CONTENT),
+                "afmt": "{{{{Question}}}}<hr id='answer'>{{{{Answer}}}} {0}".format(MATHJAX_CONTENT),
             },
         ],
         css="""
         .card {
-            font-family: 'Crimson Text', 'arial';
-            font-size: 20px;
+            font-family: 'Crimson Text', 'Times', 'serif';
             text-align: center;
             color: black;
             background-color: white;
         }
-
-        .latex {
-            height: 0.8em;
-        }
-        
-        .latex-front {
-            height: 5.0em;
-        }
         """,
     )
 
-    def __init__(self, filename=None, deckname=None, file_index=None, absname=None):
+    def __init__(self, filename, file_index):
         self.fields = []
         self.filename = filename
         self.file_index = file_index
-        self.deckname = deckname
-        self.absname = absname
+
+    def deckdir(self):
+        return os.path.dirname(self.filename)
+
+    def deckname(self):
+        return os.path.basename(self.deckdir())
+
+    def basename(self):
+        return os.path.basename(self.filename)
+
+    def card_id(self):
+        return "{}/{}{}".format(self.deckname(), self.basename(), self.file_index)
+
+    def add_field(self, field):
+        self.fields.append(field)
 
     def has_data(self):
-        """True if we have any fields filled in."""
-        return len(self.fields) > 0
+        return len(self.fields) > 0 and any([s.strip() for s in self.fields])
 
     def has_front_and_back(self):
-        """True if we have at least two fields filled in."""
         return len(self.fields) >= 2
-
-    def add_field(self, contents):
-        """Add given text to a new field."""
-        self.fields.append(contents)
 
     def finalize(self):
         """Ensure proper shape, for extraction into result formats."""
@@ -158,55 +158,47 @@ class Card(object):
             while len(self.fields) < 3:
                 self.fields.append('')
 
-    def guid(self, deck_index=None):
-        if self.filename is not None:
-            # This is okay because we only load files ending in ".md" or similar
-            return simple_hash(self.filename + str(self.file_index))
-        if self.deckname is not None and deck_index is not None:
-            return simple_hash(self.deckname) + deck_index
-        return random.randrange(1 << 30, 1 << 31)
+    def guid(self):
+        return simple_hash(self.card_id())
 
-    def to_character_separated_line(self, separator="\t"):
-        """Produce a tab-separated string containing the fields."""
-        return separator.join(self.fields) + "\n"
-
-    def to_genanki_note(self, deck_index=None):
+    def to_genanki_note(self):
         """Produce a genanki.Note with the specified guid."""
-        guid = self.guid(deck_index=deck_index)
-        return genanki.Note(model=Card.MODEL, fields=self.fields, guid=guid)
+        return genanki.Note(model=Card.MODEL, fields=self.fields, guid=self.guid())
 
-    def make_absolute_from_relative(self, filename):
+    def make_ref_pair(self, filename):
         """Take a filename relative to the card, and make it absolute."""
-        print('given filename: ', filename)
-        print('card absname: ', self.absname)
-        print('card filename: ', self.filename)
+        newname = '%'.join(filename.split(os.sep))
+
         if os.path.isabs(filename):
-            result = filename
+            abspath = filename
         else:
-            if self.absname:
-                dirname = os.path.dirname(self.absname)
-            elif self.filename:
-                dirname = os.path.dirname(self.filename)
-            else:
-                dirname = "."
-            result = os.path.abspath(os.path.join(dirname, filename))
-        return result
+            abspath = os.path.normpath(os.path.join(self.deckdir(), filename))
+        return (abspath, newname)
 
     def media_references(self):
         """Find all media references in a card"""
-        for field in self.fields:
-            # Find HTML images, at least. Maybe some other things.
-            for match in re.finditer(r'src="([^"]*?)"', field):
-                yield self.make_absolute_from_relative(match.group(1))
-            for match in re.finditer(r'\[sound:(.*?)\]', field):
-                yield self.make_absolute_from_relative(match.group(1))
+        for i, field in enumerate(self.fields):
+            current_stage = field
+            for regex in [r'src="([^"]*?)"', r'\[sound:(.*?)\]']:
+                results = []
+
+                def process_match(m):
+                    initial_contents = m.group(1)
+                    abspath, newpath = self.make_ref_pair(initial_contents)
+                    results.append((abspath, newpath))
+                    return newpath
+
+                current_stage = re.sub(regex, process_match, current_stage)
+
+                for r in results:
+                    yield r
 
 
 class DeckCollection(dict):
     """Defaultdict for decks, but with stored name."""
     def __getitem__(self, deckname):
         if deckname not in self:
-            deck_id = random.randrange(1 << 30, 1 << 31)
+            deck_id = simple_hash(deckname)
             self[deckname] = genanki.Deck(deck_id, deckname)
         return super(DeckCollection, self).__getitem__(deckname)
 
@@ -220,73 +212,56 @@ def compile_field(field_lines, is_markdown):
     return result.replace("\n", " ")
 
 
-def produce_cards(infile, filename=None, deckname=None):
-    """Given the markdown and math in infile, produce the intended result cards."""
-    if deckname is None:
-        deckname = "Ankdown Deck"
-    current_field_lines = []
-    i = 0
-    path, basename = os.path.split(filename)
-    deck_dir = os.path.basename(path)
-    relfilename = os.path.join(deck_dir, basename)
-    print("producing cards from: ", filename)
-    current_card = Card(relfilename, deckname=deckname, file_index=i, absname=filename)
-    for line in infile:
-        stripped = line.strip()
-        if stripped in {"---", "%"}:
+def produce_cards(filename):
+    """Given the markdown in infile, produce the intended result cards."""
+    with open(filename, "r") as f:
+        current_field_lines = []
+        i = 0
+        current_card = Card(filename, file_index=i)
+        for line in f:
+            stripped = line.strip()
+            if stripped in {"---", "%"}:
+                is_markdown = not current_card.has_front_and_back()
+                field = compile_field(current_field_lines, is_markdown=is_markdown)
+                current_card.add_field(field)
+                current_field_lines = []
+                if stripped == "---":
+                    yield current_card
+                    i += 1
+                    current_card = Card(filename, file_index=i)
+            else:
+                current_field_lines.append(line)
+
+        if current_field_lines:
             is_markdown = not current_card.has_front_and_back()
             field = compile_field(current_field_lines, is_markdown=is_markdown)
             current_card.add_field(field)
-            current_field_lines = []
-            if stripped == "---":
-                yield current_card
-                i += 1
-                current_card = Card(relfilename, deckname=deckname, file_index=i, absname=filename)
-        else:
-            current_field_lines.append(line)
-
-    if current_field_lines:
-        is_markdown = not current_card.has_front_and_back()
-        field = compile_field(current_field_lines, is_markdown=is_markdown)
-        current_card.add_field(field)
-    if current_card.has_data():
-        yield current_card
+        if current_card.has_data():
+            yield current_card
 
 
-def cards_from_dir(dirname, deckname=None):
+def cards_from_dir(dirname):
     """Walk a directory and produce the cards found there, one by one."""
     for parent_dir, _, files in os.walk(dirname):
         for fn in files:
             if fn.endswith(".md") or fn.endswith(".markdown"):
-                if deckname is None:
-                    if parent_dir == ".":
-                        # Fall back on filename if this is invoked from the
-                        # directory containing the md file
-                        this_deck_name = fn.rsplit(".", 1)[0]
-                    else:
-                        this_deck_name = os.path.basename(parent_dir)
-                else:
-                    this_deck_name = deckname
-                path = os.path.abspath(os.path.join(parent_dir, fn))
-                with open(os.path.join(parent_dir, fn), "r") as f:
-                    for card in produce_cards(f, filename=path, deckname=this_deck_name):
-                        yield card
+                for card in produce_cards(os.path.join(parent_dir, fn)):
+                    yield card
 
 def cards_to_apkg(cards, output_name):
-    """Take an iterable of the cards, and put a .apkg in a file called output_name."""
-
-    # NOTE(ben): I'd rather have this function take an open file as a parameter
-    # than take the filename to write to, but I'm constrained by the genanki API
-
+    """Take an iterable of the cards, and put a .apkg in a file called output_name.
+    
+    NOTE: We _must_ be in a temp directory.
+    """
     decks = DeckCollection()
 
     media = set()
     for card in cards:
         card.finalize()
-        for media_reference in card.media_references():
-            media.add(media_reference)
-        deck_index = len(decks[card.deckname].notes)
-        decks[card.deckname].add_note(card.to_genanki_note(deck_index=deck_index))
+        for abspath, newpath in card.media_references():
+            copyfile(abspath, newpath) # This is inefficient but definitely works on all platforms.
+            media.add(newpath)
+        decks[card.deckname()].add_note(card.to_genanki_note())
 
     package = genanki.Package(deck_or_decks=decks.values(), media_files=list(media))
     package.write_to_file(output_name)
@@ -299,13 +274,18 @@ def main():
 
     pkg_arg = arguments.get('-p', 'AnkdownPkg.apkg')
     recur_dir = arguments.get('-r', '.')
+    initial_dir = os.getcwd()
 
     recur_dir = os.path.abspath(recur_dir)
     pkg_arg = os.path.abspath(pkg_arg)
 
-    card_iterator = cards_from_dir(recur_dir)
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        os.chdir(tmpdirname) # genanki is very opinionated about where we are.
 
-    cards_to_apkg(card_iterator, pkg_arg)
+        card_iterator = cards_from_dir(recur_dir)
+        cards_to_apkg(card_iterator, pkg_arg)
+
+        os.chdir(initial_dir)
 
 
 if __name__ == "__main__":
