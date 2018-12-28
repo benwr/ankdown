@@ -42,7 +42,7 @@ Variance of \(f(x)\)
 
 %
 
-\[\text{Var}(f(x)) = \mathbb{E}[(X - \mu)^2]\]
+\[\text{Var}(f(x)) = \mathbb{E}[(f(x) - \mathbb{E}[f(x)])^2]\]
 
 ```
 
