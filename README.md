@@ -17,11 +17,11 @@ your decks.
 **NOTE** This program requires _Python 3_, along with the
 packages in requirements.txt
 
-## Installing
+### Installing
 
 Ankdown can be installed by doing `pip3 install --user ankdown`.
 
-## Writing Cards
+### Writing Cards
 
 Cards are written in the following format:
 
@@ -58,9 +58,9 @@ and most markdown editors will work better if you separate them from
 other text with empty lines, so that they're treated as their own
 paragraphs by the editor.
 
-## Running Ankdown
+### Running Ankdown
 
-### Method A: manually
+#### Method A: manually
 
 To compile your cards, put them in markdown files with `.md` extensions,
 inside of a directory that has the name of the deck you'd like to put
@@ -68,7 +68,7 @@ the cards into. Then, run `ankdown -r [directory] -p [package filename]`.
 
 You can then import the package using the Anki import tool.
 
-### Method B: via the add-on
+#### Method B: via the add-on
 
 Once you've installed ankdown, it can be a hassle to run it on all
 of your decks over and over again. There is an [`ankdown`
