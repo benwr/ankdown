@@ -58,7 +58,7 @@ import genanki
 
 from docopt import docopt
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 
 def simple_hash(text):
     """MD5 of text, mod 2^31. Probably not a great hash function."""
@@ -117,7 +117,7 @@ class Card(object):
         ],
         css="""
         .card {
-            font-family: 'Crimson Text', 'Times', 'serif';
+            font-family: 'Crimson Pro', 'Crimson Text', 'Cardo', 'Times', 'serif';
             text-align: center;
             color: black;
             background-color: white;
@@ -219,7 +219,7 @@ def compile_field(field_lines, is_markdown):
     """Turn field lines into an HTML field suitable for Anki."""
     fieldtext = ''.join(field_lines)
     if is_markdown:
-        return field_to_html('\n'.join(field_lines))
+        return field_to_html(fieldtext)
     else:
         return fieldtext
 
