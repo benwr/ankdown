@@ -61,10 +61,10 @@ from docopt import docopt
 VERSION = "0.5.1"
 
 def simple_hash(text):
-    """MD5 of text, mod 2^31. Probably not a great hash function."""
+    """MD5 of text, mod 2^63. Probably not a great hash function."""
     h = hashlib.md5()
     h.update(text.encode("utf-8"))
-    return int(h.hexdigest(), 16) % (1 << 31)
+    return int(h.hexdigest(), 16) % (1 << 63)
 
 
 class Card(object):
