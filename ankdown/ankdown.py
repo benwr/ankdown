@@ -58,7 +58,7 @@ import genanki
 
 from docopt import docopt
 
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 
 def simple_hash(text):
     """MD5 of text, mod 2^63. Probably not a great hash function."""
