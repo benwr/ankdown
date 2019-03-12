@@ -102,3 +102,6 @@ ENV/
 
 # Friggin Apple
 .DS_Store
+
+#PyCharm
+.idea/

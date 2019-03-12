@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Ankdown: Convert Markdown files into anki decks.
 
 This is a hacky script that I wrote because I wanted to use
@@ -33,7 +33,7 @@ Second Card Back (note that tags are optional)
 ```
 
 Usage:
-    ankdown.py [-r DIR] [-p PACKAGENAME]
+    ankdown.py [-r DIR] [-p PACKAGENAME] [--css CSS_STRING]
 
 Options:
     -h --help     Show this help message
@@ -42,6 +42,8 @@ Options:
     -r DIR        Recursively visit DIR, accumulating cards from `.md` files.
 
     -p PACKAGE    Instead of a .txt file, produce a .apkg file. recommended.
+
+    --css CSS_STRING   CSS Config as String
 """
 
 
@@ -100,35 +102,36 @@ class Card(object):
 
     MODEL_NAME = "Ankdown Model 2"
     MODEL_ID = simple_hash(MODEL_NAME)
-    MODEL = genanki.Model(
-        MODEL_ID,
-        MODEL_NAME,
-        fields=[
-            {"name": "Question"},
-            {"name": "Answer"},
-            {"name": "Tags"},
-        ],
-        templates=[
-            {
-                "name": "Ankdown Card",
-                "qfmt": "{{{{Question}}}}\n{0}".format(MATHJAX_CONTENT),
-                "afmt": "{{{{Question}}}}<hr id='answer'>{{{{Answer}}}}\n{0}".format(MATHJAX_CONTENT),
-            },
-        ],
-        css="""
+    MODEL_CSS = """
         .card {
             font-family: 'Crimson Pro', 'Crimson Text', 'Cardo', 'Times', 'serif';
             text-align: center;
             color: black;
             background-color: white;
         }
-        """,
-    )
+        """
 
     def __init__(self, filename, file_index):
         self.fields = []
         self.filename = filename
         self.file_index = file_index
+        self.model = genanki.Model(
+            Card.MODEL_ID,
+            Card.MODEL_NAME,
+            fields=[
+                {"name": "Question"},
+                {"name": "Answer"},
+                {"name": "Tags"},
+            ],
+            templates=[
+                {
+                    "name": "Ankdown Card",
+                    "qfmt": "{{{{Question}}}}\n{0}".format(Card.MATHJAX_CONTENT),
+                    "afmt": "{{{{Question}}}}<hr id='answer'>{{{{Answer}}}}\n{0}".format(Card.MATHJAX_CONTENT),
+                },
+            ],
+            css=Card.MODEL_CSS
+        )
 
     def deckdir(self):
         return os.path.dirname(self.filename)
@@ -164,7 +167,7 @@ class Card(object):
 
     def to_genanki_note(self):
         """Produce a genanki.Note with the specified guid."""
-        return genanki.Note(model=Card.MODEL, fields=self.fields, guid=self.guid())
+        return genanki.Note(model=self.model, fields=self.fields, guid=self.guid())
 
     def make_ref_pair(self, filename):
         """Take a filename relative to the card, and make it absolute."""
@@ -283,7 +286,9 @@ def main():
     """Run the thing."""
 
     arguments = docopt(__doc__, version=VERSION)
-
+    css_config = arguments.get('--css')
+    if css_config is not None:
+        Card.MODEL_CSS = css_config
     pkg_arg = arguments.get('-p', 'AnkdownPkg.apkg')
     recur_dir = arguments.get('-r', '.')
     initial_dir = os.getcwd()
