@@ -103,5 +103,9 @@ ENV/
 # Friggin Apple
 .DS_Store
 
-#PyCharm
+# PyCharm
 .idea/
+
+# VSCode
+.vscode
+*.code-workspace
