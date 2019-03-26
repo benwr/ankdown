@@ -62,7 +62,7 @@ import genanki
 
 from docopt import docopt
 
-VERSION = "0.5.2"
+VERSION = "0.5.3"
 FLAG_DOLLAR = False
 
 def simple_hash(text):
