@@ -32,8 +32,20 @@ Second Card Front:
 Second Card Back (note that tags are optional)
 ```
 
+Ankdown can be configured via yaml. A possible configuration file might look like this:
+
+```yaml
+recur_dir: ~/ankdown_cards
+pkg_arg: ~/ankdown_cards.apkg
+card_model_name: CustomModelName
+card_model_css: ".card {font-family: 'Crimson Pro', 'Crimson Text', 'Cardo', 'Times', 'serif'; text-align: left; color: black; background-color: white;}"
+dollar: True
+```
+
+A configuration can also be passed as a string: `"{dollar: True, card_model_name: CustomModelName, card_model_css: \".card {text-align: left;}\"}"`
+
 Usage:
-    ankdown.py [-r DIR] [-p PACKAGENAME] [--css CSS_STRING] [--dollar]
+    ankdown.py [-r DIR] [-p PACKAGENAME] [--config CONFIG_STRING] [--configFile CONFIG_FILE_PATH]
 
 Options:
     -h --help     Show this help message
@@ -43,9 +55,9 @@ Options:
 
     -p PACKAGE    Instead of a .txt file, produce a .apkg file. recommended.
 
-    --css CSS_STRING   CSS Config as String
+    --config CONFIG_STRING   ankdown configuration as YAML string
 
-    --dollar    Uses dollar sign as math separator instead of brackets
+    --configFile CONFIG_FILE_PATH path to ankdown configuration as YAML file
 """
 
 
@@ -59,11 +71,67 @@ from shutil import copyfile
 
 import misaka
 import genanki
+import yaml
 
 from docopt import docopt
 
 VERSION = "0.5.3"
-FLAG_DOLLAR = False
+
+# Anki 2.1 has mathjax built in, but ankidroid and other clients don't.
+CARD_MATHJAX_CONTENT = textwrap.dedent("""\
+<script type="text/x-mathjax-config">
+MathJax.Hub.processSectionDelay = 0;
+MathJax.Hub.Config({
+  messageStyle: 'none',
+  tex2jax: {
+    inlineMath: [['\\\\(', '\\\\)']],
+    displayMath: [['\\\\[', '\\\\]']],
+    processEscapes: true
+  }
+});
+</script>
+<script type="text/javascript">
+(function() {
+  if (window.MathJax != null) {
+    var card = document.querySelector('.card');
+    MathJax.Hub.Queue(['Typeset', MathJax.Hub, card]);
+    return;
+  }
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_CHTML';
+  document.body.appendChild(script);
+})();
+</script>
+""")
+
+CONFIG = {
+    'pkg_arg': 'AnkdownPkg.apkg',
+    'recur_dir': '.',
+    'dollar': False,
+    'card_model_name': 'Ankdown Model 2',
+    'card_model_css': """
+        .card {
+            font-family: 'Crimson Pro', 'Crimson Text', 'Cardo', 'Times', 'serif';
+            text-align: center;
+            color: black;
+            background-color: white;
+        }
+        """,
+    'card_model_fields': [
+        {"name": "Question"},
+        {"name": "Answer"},
+        {"name": "Tags"},
+    ],
+    'card_model_templates': [
+        {
+            "name": "Ankdown Card",
+            "qfmt": "{{{{Question}}}}\n{0}".format(CARD_MATHJAX_CONTENT),
+            "afmt": "{{{{Question}}}}<hr id='answer'>{{{{Answer}}}}\n{0}".format(CARD_MATHJAX_CONTENT),
+        }
+    ]
+}
+
 
 def simple_hash(text):
     """MD5 of text, mod 2^63. Probably not a great hash function."""
@@ -75,65 +143,16 @@ def simple_hash(text):
 class Card(object):
     """A single anki card."""
 
-    # Anki 2.1 has mathjax built in, but ankidroid and other clients don't.
-    MATHJAX_CONTENT = textwrap.dedent("""\
-    <script type="text/x-mathjax-config">
-    MathJax.Hub.processSectionDelay = 0;
-    MathJax.Hub.Config({
-      messageStyle: 'none',
-      tex2jax: {
-        inlineMath: [['\\\\(', '\\\\)']],
-        displayMath: [['\\\\[', '\\\\]']],
-        processEscapes: true
-      }
-    });
-    </script>
-    <script type="text/javascript">
-    (function() {
-      if (window.MathJax != null) {
-        var card = document.querySelector('.card');
-        MathJax.Hub.Queue(['Typeset', MathJax.Hub, card]);
-        return;
-      }
-      var script = document.createElement('script');
-      script.type = 'text/javascript';
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_CHTML';
-      document.body.appendChild(script);
-    })();
-    </script>
-    """)
-
-    MODEL_NAME = "Ankdown Model 2"
-    MODEL_ID = simple_hash(MODEL_NAME)
-    MODEL_CSS = """
-        .card {
-            font-family: 'Crimson Pro', 'Crimson Text', 'Cardo', 'Times', 'serif';
-            text-align: center;
-            color: black;
-            background-color: white;
-        }
-        """
-
     def __init__(self, filename, file_index):
         self.fields = []
         self.filename = filename
         self.file_index = file_index
         self.model = genanki.Model(
-            Card.MODEL_ID,
-            Card.MODEL_NAME,
-            fields=[
-                {"name": "Question"},
-                {"name": "Answer"},
-                {"name": "Tags"},
-            ],
-            templates=[
-                {
-                    "name": "Ankdown Card",
-                    "qfmt": "{{{{Question}}}}\n{0}".format(Card.MATHJAX_CONTENT),
-                    "afmt": "{{{{Question}}}}<hr id='answer'>{{{{Answer}}}}\n{0}".format(Card.MATHJAX_CONTENT),
-                },
-            ],
-            css=Card.MODEL_CSS
+            simple_hash(CONFIG['card_model_name']),
+            CONFIG['card_model_name'],
+            fields=CONFIG['card_model_fields'],
+            templates=CONFIG['card_model_templates'],
+            css=CONFIG['card_model_css']
         )
 
     def deckdir(self):
@@ -212,10 +231,11 @@ class DeckCollection(dict):
             self[deckname] = genanki.Deck(deck_id, deckname)
         return super(DeckCollection, self).__getitem__(deckname)
 
+
 def field_to_html(field):
     """Need to extract the math in brackets so that it doesn't get markdowned.
     If math is separated with dollar sign it is converted to brackets."""
-    if FLAG_DOLLAR:
+    if CONFIG['dollar']:
         for (sep, (op, cl)) in [("$$", (r"\\[", r"\\]")), ("$", (r"\\(", r"\\)"))]:
             escaped_sep = sep.replace(r"$", r"\$")
             # ignore escaped dollar signs when splitting the field    
@@ -229,6 +249,7 @@ def field_to_html(field):
             # backslashes, man.
 
     return misaka.html(field, extensions=("fenced-code", "math"))
+
 
 def compile_field(field_lines, is_markdown):
     """Turn field lines into an HTML field suitable for Anki."""
@@ -275,6 +296,7 @@ def cards_from_dir(dirname):
                 for card in produce_cards(os.path.join(parent_dir, fn)):
                     yield card
 
+
 def cards_to_apkg(cards, output_name):
     """Take an iterable of the cards, and put a .apkg in a file called output_name.
     
@@ -294,21 +316,27 @@ def cards_to_apkg(cards, output_name):
     package.write_to_file(output_name)
 
 
+def apply_arguments(arguments):
+    global CONFIG
+    if arguments.get('--configFile') is not None:
+        config_file_path = os.path.abspath(os.path.expanduser(arguments.get('--configFile')))
+        with open(config_file_path, 'r') as config_file:
+            CONFIG.update(yaml.load(config_file))
+    if arguments.get('--config') is not None:
+        CONFIG.update(yaml.load(arguments.get('--config')))
+    if arguments.get('-p') is not None:
+        CONFIG['pkgArg'] = arguments.get('-p')
+    if arguments.get('-r') is not None:
+        CONFIG['recurDir'] = arguments.get('-r')
+
+
 def main():
     """Run the thing."""
-
-    arguments = docopt(__doc__, version=VERSION)
-    global FLAG_DOLLAR
-    FLAG_DOLLAR = arguments.get('--dollar')
-    css_config = arguments.get('--css')
-    if css_config is not None:
-        Card.MODEL_CSS = css_config
-    pkg_arg = arguments.get('-p', 'AnkdownPkg.apkg')
-    recur_dir = arguments.get('-r', '.')
+    apply_arguments(docopt(__doc__, version=VERSION))
+    # print(yaml.dump(CONFIG))
     initial_dir = os.getcwd()
-
-    recur_dir = os.path.abspath(recur_dir)
-    pkg_arg = os.path.abspath(pkg_arg)
+    recur_dir = os.path.abspath(os.path.expanduser(CONFIG['recur_dir']))
+    pkg_arg = os.path.abspath(os.path.expanduser(CONFIG['pkg_arg']))
 
     with tempfile.TemporaryDirectory() as tmpdirname:
         os.chdir(tmpdirname) # genanki is very opinionated about where we are.
