@@ -75,7 +75,7 @@ import yaml
 
 from docopt import docopt
 
-VERSION = "0.5.3"
+VERSION = "0.6.0"
 
 # Anki 2.1 has mathjax built in, but ankidroid and other clients don't.
 CARD_MATHJAX_CONTENT = textwrap.dedent("""\
