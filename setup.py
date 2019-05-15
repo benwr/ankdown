@@ -37,6 +37,7 @@ setup(
     ],
     keywords="anki spaced-repetition markdown math latex",
     packages=find_packages(),
+    package_data={'':['*.css']},
     install_requires=['genanki>=0.6.3', 'misaka>=2.1.0', 'docopt>=0.6.2', 'houdini.py>=0.1.0', 'Pygments>=2.4.0'],
     entry_points={
         "console_scripts": [
