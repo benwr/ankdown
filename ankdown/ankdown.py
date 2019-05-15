@@ -325,9 +325,9 @@ def apply_arguments(arguments):
     if arguments.get('--config') is not None:
         CONFIG.update(yaml.load(arguments.get('--config')))
     if arguments.get('-p') is not None:
-        CONFIG['pkgArg'] = arguments.get('-p')
+        CONFIG['pkg_arg'] = arguments.get('-p')
     if arguments.get('-r') is not None:
-        CONFIG['recurDir'] = arguments.get('-r')
+        CONFIG['recur_dir'] = arguments.get('-r')
 
 
 def main():
