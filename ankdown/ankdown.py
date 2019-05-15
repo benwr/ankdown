@@ -45,7 +45,7 @@ dollar: True
 A configuration can also be passed as a string: `"{dollar: True, card_model_name: CustomModelName, card_model_css: \".card {text-align: left;}\"}"`
 
 Usage:
-    ankdown.py [-r DIR] [-p PACKAGENAME] [--config CONFIG_STRING] [--configFile CONFIG_FILE_PATH]
+    ankdown.py [-r DIR] [-p PACKAGENAME] [--highlight] [--config CONFIG_STRING] [--configFile CONFIG_FILE_PATH]
 
 Options:
     -h --help     Show this help message
@@ -54,6 +54,8 @@ Options:
     -r DIR        Recursively visit DIR, accumulating cards from `.md` files.
 
     -p PACKAGE    Instead of a .txt file, produce a .apkg file. recommended.
+
+    --highlight   Enable syntax highlighting for code
 
     --config CONFIG_STRING   ankdown configuration as YAML string
 
@@ -74,6 +76,31 @@ import genanki
 import yaml
 
 from docopt import docopt
+
+import houdini as h
+from pygments import highlight
+from pygments.formatters import HtmlFormatter, ClassNotFound
+from pygments.lexers import get_lexer_by_name
+
+
+class HighlighterRenderer(misaka.HtmlRenderer):
+    def blockcode(self, text, lang):
+        try:
+            lexer = get_lexer_by_name(lang, stripall=True)
+        except ClassNotFound:
+            lexer = None
+
+        if lexer:
+            formatter = HtmlFormatter()
+            return highlight(text, lexer, formatter)
+        # default
+        return '\n<pre><code>{}</code></pre>\n'.format(
+            h.escape_html(text.strip()))
+
+
+renderer = HighlighterRenderer()
+highlight_markdown = misaka.Markdown(renderer, extensions=("fenced-code", "math"))
+
 
 VERSION = "0.6.0"
 
@@ -109,6 +136,7 @@ CONFIG = {
     'pkg_arg': 'AnkdownPkg.apkg',
     'recur_dir': '.',
     'dollar': False,
+    'highlight': False,
     'card_model_name': 'Ankdown Model 2',
     'card_model_css': """
         .card {
@@ -247,6 +275,10 @@ def field_to_html(field):
         for bracket in ["(", ")", "[", "]"]:
             field = field.replace(r"\{}".format(bracket), r"\\{}".format(bracket))
             # backslashes, man.
+    
+    if CONFIG['highlight']:
+        return highlight_markdown(field)
+
 
     return misaka.html(field, extensions=("fenced-code", "math"))
 
@@ -328,6 +360,12 @@ def apply_arguments(arguments):
         CONFIG['pkg_arg'] = arguments.get('-p')
     if arguments.get('-r') is not None:
         CONFIG['recur_dir'] = arguments.get('-r')
+    if arguments.get('--highlight'):
+        CONFIG['highlight'] = True
+        css_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'highlight.css')
+        with open(css_file_path) as css_file:
+            CONFIG['card_model_css'] += css_file.read().replace('\n', '')
+
 
 
 def main():

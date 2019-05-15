@@ -6,4 +6,6 @@ genanki==0.6.3
 misaka==2.1.0
 pycparser==2.18
 pystache==0.5.4
-PyYAML==3.12
+PyYAML==3.13
+Pygments==2.4.0
+houdini.py==0.1.0
