@@ -102,7 +102,7 @@ renderer = HighlighterRenderer()
 highlight_markdown = misaka.Markdown(renderer, extensions=("fenced-code", "math"))
 
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 
 # Anki 2.1 has mathjax built in, but ankidroid and other clients don't.
 CARD_MATHJAX_CONTENT = textwrap.dedent("""\

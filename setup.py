@@ -10,9 +10,10 @@ with codec_open(path.join(HERE, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="ankdown",
-    version="0.7.0",
+    version="0.7.1",
     description="A utility for converting Markdown into Anki cards",
     long_description=LONG_DESCRIPTION,
+    long_description_content_type="text/markdown",
     url="https://github.com/benwr/ankdown",
 
     author="Ben Weinstein-Raun",
