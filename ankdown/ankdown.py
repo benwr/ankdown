@@ -362,10 +362,13 @@ def apply_arguments(arguments):
         CONFIG['recur_dir'] = arguments.get('-r')
     if arguments.get('--highlight'):
         CONFIG['highlight'] = True
-        css_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'highlight.css')
-        with open(css_file_path) as css_file:
-            CONFIG['card_model_css'] += css_file.read().replace('\n', '')
 
+
+def apply_highlight_css():
+    global CONFIG
+    css_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'highlight.css')
+    with open(css_file_path) as css_file:
+        CONFIG['card_model_css'] += css_file.read().replace('\n', '')
 
 
 def main():
@@ -375,6 +378,9 @@ def main():
     initial_dir = os.getcwd()
     recur_dir = os.path.abspath(os.path.expanduser(CONFIG['recur_dir']))
     pkg_arg = os.path.abspath(os.path.expanduser(CONFIG['pkg_arg']))
+
+    if CONFIG['highlight']:
+        apply_highlight_css()
 
     with tempfile.TemporaryDirectory() as tmpdirname:
         os.chdir(tmpdirname) # genanki is very opinionated about where we are.
