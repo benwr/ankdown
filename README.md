@@ -65,8 +65,11 @@ paragraphs by the editor.
 To compile your cards, put them in markdown files with `.md` extensions,
 inside of a directory that has the name of the deck you'd like to put
 the cards into. Then, run `ankdown -r [directory] -p [package filename]`.
+The package filename should end in `.apkg`.
 
-You can then import the package using the Anki import tool.
+You can then import the package using the Anki import tool. To do this,
+go to `File > Import`, and then in the drop-down menu select "Packaged
+Anki Deck/Collection (*.apkg)".
 
 #### Method B: via the add-on
 
