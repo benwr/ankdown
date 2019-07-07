@@ -294,7 +294,7 @@ def compile_field(field_lines, is_markdown):
 
 def produce_cards(filename):
     """Given the markdown in infile, produce the intended result cards."""
-    with open(filename, "r") as f:
+    with open(filename, "r", encoding="utf8") as f:
         current_field_lines = []
         i = 0
         current_card = Card(filename, file_index=i)
